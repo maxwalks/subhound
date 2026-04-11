@@ -1,6 +1,7 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-from analyze import decode_manchester, detect_rolling_code
+from analyze import decode_manchester, detect_rolling_code, compute_signal_quality, SubFile, extract_features
+
 
 def test_manchester_ge_thomas_convention():
     # G.E.Thomas: 1=10, 0=01
@@ -38,6 +39,7 @@ def test_manchester_tiebreak_all_errors():
     # first pair is (0,0): not 1,0 so tiebreak falls through to IEEE
     assert "IEEE" in convention
 
+
 def test_rolling_code_detected():
     # Segments differ in last 4 bits (rolling counter)
     seg0 = [1,0,1,1,0,0,1,0,  1,0,0,1,0,1,0,0]
@@ -73,7 +75,6 @@ def test_rolling_code_truncation_flag():
     result = detect_rolling_code([seg0, seg1])
     assert result["truncated"] is True
 
-from analyze import compute_signal_quality, SubFile, extract_features
 
 def _make_sub(segs, freq=433_920_000, te=174):
     return SubFile(path="test", frequency=freq, te_us=te,
@@ -91,3 +92,4 @@ def test_signal_quality_high_for_clean_pwm():
     sub_zero = _make_sub([[0]*160])
     fv_zero = extract_features(sub_zero)
     assert fv_dense.signal_quality > fv_zero.signal_quality
+    assert fv_dense.signal_quality >= 0.5

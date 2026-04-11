@@ -383,7 +383,7 @@ def detect_rolling_code(decoded_segs: list) -> dict:
     return {"is_rolling": True, "is_fixed": False, "diff_positions": diff_positions, "truncated": truncated}
 
 
-def compute_signal_quality(sub: SubFile, fv: FeatureVector) -> float:
+def compute_signal_quality(fv: FeatureVector) -> float:
     """
     Composite signal quality score 0.0–1.0.
     Combines: inner_ratio, PWM consistency, segment similarity, entropy quality.
@@ -552,7 +552,7 @@ def extract_features(sub: SubFile) -> FeatureVector:
     if first_inner:
         manchester_bits, manchester_convention, manchester_error_rate = decode_manchester(first_inner)
     else:
-        manchester_bits, manchester_convention, manchester_error_rate = [], "", 0.0
+        manchester_bits, manchester_convention, manchester_error_rate = [], "G.E.Thomas", 0.0
     manchester_decoded_count = len(manchester_bits)
 
     # Rolling code detection (PWM-decode each segment independently, then compare)
@@ -596,7 +596,7 @@ def extract_features(sub: SubFile) -> FeatureVector:
         lat=sub.lat,
         lon=sub.lon,
     )
-    fv.signal_quality = compute_signal_quality(sub, fv)
+    fv.signal_quality = compute_signal_quality(fv)
     return fv
 
 
