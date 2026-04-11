@@ -318,6 +318,8 @@ def decode_manchester(bits: list) -> tuple:
     Returns (decoded_bits, convention_name, error_rate).
     Convention G.E.Thomas: 1=10, 0=01
     Convention IEEE 802.3: 1=01, 0=10
+    Odd-length input: trailing bit is silently dropped (only complete pairs decoded).
+    Invalid pairs (0,0 or 1,1) are counted as errors and not appended to output.
     """
     if not bits:
         return [], "G.E.Thomas", 0.0
@@ -334,8 +336,9 @@ def decode_manchester(bits: list) -> tuple:
             elif a == 0 and b == 1:
                 decoded.append(0 if hi_is_one else 1)
             else:
+                # Invalid pair (0,0 or 1,1): not appended, counted as error
                 errors += 1
-        error_rate = errors / max(total, 1)
+        error_rate = errors / total  # total >= 1 guaranteed: loop only runs when len(bits) >= 2
         return decoded, error_rate
 
     decoded_a, err_a = _try_convention(True)   # G.E.Thomas: 10=1

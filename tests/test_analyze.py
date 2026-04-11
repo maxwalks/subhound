@@ -28,3 +28,12 @@ def test_manchester_empty():
     bits, convention, error_rate = decode_manchester([])
     assert bits == []
     assert error_rate == 0.0
+
+def test_manchester_tiebreak_all_errors():
+    # All-invalid pairs: both conventions have equal error rate; tiebreak by first pair
+    raw = [0, 0, 1, 1]  # both pairs invalid under both conventions
+    bits, convention, error_rate = decode_manchester(raw)
+    assert error_rate == 1.0
+    assert bits == []
+    # first pair is (0,0): not 1,0 so tiebreak falls through to IEEE
+    assert "IEEE" in convention
