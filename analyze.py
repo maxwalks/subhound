@@ -354,6 +354,31 @@ def decode_manchester(bits: list) -> tuple:
     return decoded_b, "IEEE 802.3 (1=low-high)", err_b
 
 
+def detect_rolling_code(decoded_segs: list) -> dict:
+    """
+    Compare PWM-decoded bit lists across segments.
+    Returns dict with keys: is_rolling, is_fixed, diff_positions.
+    decoded_segs: list of list[int], one per segment.
+    """
+    if len(decoded_segs) < 2:
+        return {"is_rolling": False, "is_fixed": False, "diff_positions": []}
+
+    min_len = min(len(s) for s in decoded_segs)
+    if min_len == 0:
+        return {"is_rolling": False, "is_fixed": False, "diff_positions": []}
+
+    diff_positions = []
+    for pos in range(min_len):
+        values = {s[pos] for s in decoded_segs}
+        if len(values) > 1:
+            diff_positions.append(pos)
+
+    if not diff_positions:
+        return {"is_rolling": False, "is_fixed": True, "diff_positions": []}
+
+    return {"is_rolling": True, "is_fixed": False, "diff_positions": diff_positions}
+
+
 def detect_preamble(bits: list) -> object:
     """Find longest alternating run of >= 8 bits."""
     if not bits:

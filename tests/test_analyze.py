@@ -37,3 +37,28 @@ def test_manchester_tiebreak_all_errors():
     assert bits == []
     # first pair is (0,0): not 1,0 so tiebreak falls through to IEEE
     assert "IEEE" in convention
+
+from analyze import detect_rolling_code
+
+def test_rolling_code_detected():
+    # Segments differ in last 4 bits (rolling counter)
+    seg0 = [1,0,1,1,0,0,1,0,  1,0,0,1,0,1,0,0]
+    seg1 = [1,0,1,1,0,0,1,0,  1,0,0,1,0,1,0,1]
+    seg2 = [1,0,1,1,0,0,1,0,  1,0,0,1,0,1,1,0]
+    result = detect_rolling_code([seg0, seg1, seg2])
+    assert result["is_rolling"] is True
+    assert result["is_fixed"] is False
+    assert 15 in result["diff_positions"]
+
+def test_fixed_code_detected():
+    seg = [1,0,1,1,0,0,1,0,1,0,0,1,0,1,0,0]
+    result = detect_rolling_code([seg, seg, seg])
+    assert result["is_fixed"] is True
+    assert result["is_rolling"] is False
+    assert result["diff_positions"] == []
+
+def test_rolling_code_single_segment():
+    seg = [1,0,1,1,0,0]
+    result = detect_rolling_code([seg])
+    assert result["is_rolling"] is False
+    assert result["is_fixed"] is False
