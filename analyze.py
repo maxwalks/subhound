@@ -357,15 +357,19 @@ def decode_manchester(bits: list) -> tuple:
 def detect_rolling_code(decoded_segs: list) -> dict:
     """
     Compare PWM-decoded bit lists across segments.
-    Returns dict with keys: is_rolling, is_fixed, diff_positions.
+    Returns dict with keys: is_rolling, is_fixed, diff_positions, truncated.
+    truncated=True when segments differ in length (tail bits of longer segs ignored).
     decoded_segs: list of list[int], one per segment.
     """
-    if len(decoded_segs) < 2:
-        return {"is_rolling": False, "is_fixed": False, "diff_positions": []}
+    if not decoded_segs or len(decoded_segs) < 2:
+        return {"is_rolling": False, "is_fixed": False, "diff_positions": [], "truncated": False}
 
-    min_len = min(len(s) for s in decoded_segs)
+    lengths = [len(s) for s in decoded_segs]
+    min_len = min(lengths)
+    truncated = len(set(lengths)) > 1
+
     if min_len == 0:
-        return {"is_rolling": False, "is_fixed": False, "diff_positions": []}
+        return {"is_rolling": False, "is_fixed": False, "diff_positions": [], "truncated": truncated}
 
     diff_positions = []
     for pos in range(min_len):
@@ -374,9 +378,9 @@ def detect_rolling_code(decoded_segs: list) -> dict:
             diff_positions.append(pos)
 
     if not diff_positions:
-        return {"is_rolling": False, "is_fixed": True, "diff_positions": []}
+        return {"is_rolling": False, "is_fixed": True, "diff_positions": [], "truncated": truncated}
 
-    return {"is_rolling": True, "is_fixed": False, "diff_positions": diff_positions}
+    return {"is_rolling": True, "is_fixed": False, "diff_positions": diff_positions, "truncated": truncated}
 
 
 def detect_preamble(bits: list) -> object:

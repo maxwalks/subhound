@@ -1,6 +1,6 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-from analyze import decode_manchester
+from analyze import decode_manchester, detect_rolling_code
 
 def test_manchester_ge_thomas_convention():
     # G.E.Thomas: 1=10, 0=01
@@ -38,8 +38,6 @@ def test_manchester_tiebreak_all_errors():
     # first pair is (0,0): not 1,0 so tiebreak falls through to IEEE
     assert "IEEE" in convention
 
-from analyze import detect_rolling_code
-
 def test_rolling_code_detected():
     # Segments differ in last 4 bits (rolling counter)
     seg0 = [1,0,1,1,0,0,1,0,  1,0,0,1,0,1,0,0]
@@ -62,3 +60,15 @@ def test_rolling_code_single_segment():
     result = detect_rolling_code([seg])
     assert result["is_rolling"] is False
     assert result["is_fixed"] is False
+
+def test_rolling_code_empty_list():
+    result = detect_rolling_code([])
+    assert result["is_rolling"] is False
+    assert result["is_fixed"] is False
+
+def test_rolling_code_truncation_flag():
+    # Segments of different lengths — truncated should be True
+    seg0 = [1, 0, 1, 0, 1, 0]
+    seg1 = [1, 0, 1, 0]
+    result = detect_rolling_code([seg0, seg1])
+    assert result["truncated"] is True
