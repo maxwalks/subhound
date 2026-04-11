@@ -312,6 +312,45 @@ def decode_pwm_bits(bits: list, pwm: object) -> list:
     return decoded
 
 
+def decode_manchester(bits: list) -> tuple:
+    """
+    Decode Manchester-encoded bits. Tries both conventions, returns the better one.
+    Returns (decoded_bits, convention_name, error_rate).
+    Convention G.E.Thomas: 1=10, 0=01
+    Convention IEEE 802.3: 1=01, 0=10
+    """
+    if not bits:
+        return [], "G.E.Thomas", 0.0
+
+    def _try_convention(hi_is_one: bool):
+        decoded = []
+        errors = 0
+        total = 0
+        for i in range(0, len(bits) - 1, 2):
+            a, b = bits[i], bits[i + 1]
+            total += 1
+            if a == 1 and b == 0:
+                decoded.append(1 if hi_is_one else 0)
+            elif a == 0 and b == 1:
+                decoded.append(0 if hi_is_one else 1)
+            else:
+                errors += 1
+        error_rate = errors / max(total, 1)
+        return decoded, error_rate
+
+    decoded_a, err_a = _try_convention(True)   # G.E.Thomas: 10=1
+    decoded_b, err_b = _try_convention(False)  # IEEE 802.3: 01=1
+
+    if err_a < err_b:
+        return decoded_a, "G.E.Thomas (1=high-low)", err_a
+    if err_b < err_a:
+        return decoded_b, "IEEE 802.3 (1=low-high)", err_b
+    # tied: use first valid pair to pick convention
+    if bits[0] == 1 and bits[1] == 0:
+        return decoded_a, "G.E.Thomas (1=high-low)", err_a
+    return decoded_b, "IEEE 802.3 (1=low-high)", err_b
+
+
 def detect_preamble(bits: list) -> object:
     """Find longest alternating run of >= 8 bits."""
     if not bits:
