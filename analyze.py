@@ -160,6 +160,7 @@ def parse_sub_file(path: str) -> SubFile:
                 hex_data = line.split(":", 1)[1].strip()
                 bits = _hex_to_bits(hex_data)
                 if pending_bit_raw is not None:
+                    # Truncate to declared bit count (removes MSB padding of last byte)
                     bits = bits[:pending_bit_raw]
                     pending_bit_raw = None
                 segments.append(bits)
@@ -468,7 +469,7 @@ def extract_features(sub: SubFile) -> FeatureVector:
         manchester_decoded_bits=[],
         manchester_decoded_count=0,
         manchester_error_rate=0.0,
-        manchester_convention="G.E.Thomas",
+        manchester_convention="",
         rolling_code=False,
         fixed_code=False,
         diff_positions=[],
