@@ -28,6 +28,9 @@ class SubFile:
     te_us: int              # microseconds
     total_bit_header: int   # from "Bit:" header field (informational)
     segments: list          # list[list[int]], one list per Data_RAW line
+    lat: float              # from Lat: header (0.0 if absent)
+    lon: float              # from Lon: header (0.0 if absent)
+    preset: str             # e.g. "FuriHalSubGhzPresetOok650Async"
 
 
 @dataclass
@@ -77,6 +80,24 @@ class FeatureVector:
     repeating_subpattern_period: object  # int or None
     repeating_subpattern_reps: int
 
+    # Manchester decoding
+    manchester_decoded_bits: list   # list[int], decoded from first segment inner bits
+    manchester_decoded_count: int
+    manchester_error_rate: float    # 0.0 = clean, 1.0 = all errors
+    manchester_convention: str      # "G.E.Thomas" or "IEEE 802.3"
+
+    # Rolling code analysis (requires 2+ segments with PWM decode)
+    rolling_code: bool              # True if segments differ in consistent bit positions
+    fixed_code: bool                # True if all decoded payloads are identical
+    diff_positions: list            # list[int], bit positions that change across segments
+
+    # Signal quality
+    signal_quality: float           # 0.0–1.0 composite score
+
+    # GPS (forwarded from SubFile)
+    lat: float
+    lon: float
+
 
 @dataclass
 class ClassificationResult:
@@ -108,6 +129,9 @@ def parse_sub_file(path: str) -> SubFile:
     total_bit_header = None
     segments = []
     pending_bit_raw = None
+    lat = 0.0
+    lon = 0.0
+    preset = ""
 
     with open(path, 'r') as f:
         for line in f:
@@ -116,6 +140,18 @@ def parse_sub_file(path: str) -> SubFile:
                 frequency = int(line.split(":", 1)[1].strip())
             elif line.startswith("TE:"):
                 te_us = int(line.split(":", 1)[1].strip())
+            elif line.startswith("Preset:"):
+                preset = line.split(":", 1)[1].strip()
+            elif line.startswith("Lat:"):
+                try:
+                    lat = float(line.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
+            elif line.startswith("Lon:"):
+                try:
+                    lon = float(line.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
             elif line.startswith("Bit:") and not line.startswith("Bit_RAW:"):
                 total_bit_header = int(line.split(":", 1)[1].strip())
             elif line.startswith("Bit_RAW:"):
@@ -123,7 +159,6 @@ def parse_sub_file(path: str) -> SubFile:
             elif line.startswith("Data_RAW:"):
                 hex_data = line.split(":", 1)[1].strip()
                 bits = _hex_to_bits(hex_data)
-                # Truncate to declared bit count if available (removes MSB padding of last byte)
                 if pending_bit_raw is not None:
                     bits = bits[:pending_bit_raw]
                     pending_bit_raw = None
@@ -142,6 +177,9 @@ def parse_sub_file(path: str) -> SubFile:
         te_us=te_us,
         total_bit_header=total_bit_header or 0,
         segments=segments,
+        lat=lat,
+        lon=lon,
+        preset=preset,
     )
 
 
@@ -427,6 +465,16 @@ def extract_features(sub: SubFile) -> FeatureVector:
         seg_similarity=seg_similarity,
         repeating_subpattern_period=rep_period,
         repeating_subpattern_reps=rep_count,
+        manchester_decoded_bits=[],
+        manchester_decoded_count=0,
+        manchester_error_rate=0.0,
+        manchester_convention="G.E.Thomas",
+        rolling_code=False,
+        fixed_code=False,
+        diff_positions=[],
+        signal_quality=0.0,
+        lat=sub.lat,
+        lon=sub.lon,
     )
 
 
