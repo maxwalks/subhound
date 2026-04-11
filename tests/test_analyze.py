@@ -72,3 +72,22 @@ def test_rolling_code_truncation_flag():
     seg1 = [1, 0, 1, 0]
     result = detect_rolling_code([seg0, seg1])
     assert result["truncated"] is True
+
+from analyze import compute_signal_quality, SubFile, extract_features
+
+def _make_sub(segs, freq=433_920_000, te=174):
+    return SubFile(path="test", frequency=freq, te_us=te,
+                   total_bit_header=0, segments=segs, lat=0.0, lon=0.0, preset="")
+
+def test_signal_quality_range():
+    sub = _make_sub([[0]*100])
+    fv = extract_features(sub)
+    assert 0.0 <= fv.signal_quality <= 1.0
+
+def test_signal_quality_high_for_clean_pwm():
+    dense = [1,0,1,1,0,1,0,1,0,0,1,0,1,1,0,0] * 10
+    sub_dense = _make_sub([dense])
+    fv_dense = extract_features(sub_dense)
+    sub_zero = _make_sub([[0]*160])
+    fv_zero = extract_features(sub_zero)
+    assert fv_dense.signal_quality > fv_zero.signal_quality

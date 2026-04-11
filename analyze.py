@@ -383,6 +383,40 @@ def detect_rolling_code(decoded_segs: list) -> dict:
     return {"is_rolling": True, "is_fixed": False, "diff_positions": diff_positions, "truncated": truncated}
 
 
+def compute_signal_quality(sub: SubFile, fv: FeatureVector) -> float:
+    """
+    Composite signal quality score 0.0–1.0.
+    Combines: inner_ratio, PWM consistency, segment similarity, entropy quality.
+    """
+    components = []
+
+    # Inner content ratio: more signal vs silence = better quality
+    inner_ratio = fv.total_inner_bits / max(fv.total_bits, 1)
+    components.append(min(inner_ratio * 2.5, 1.0))
+
+    # PWM consistency (if applicable)
+    if fv.pwm_params is not None:
+        components.append(fv.pwm_params.consistency)
+    else:
+        components.append(0.5)
+
+    # Segment similarity (multi-segment captures)
+    if fv.seg_similarity is not None:
+        components.append(fv.seg_similarity)
+    else:
+        components.append(0.5)
+
+    # Entropy quality (0.7-1.0 is good signal; very low = noise)
+    if fv.entropy >= 0.70:
+        components.append(1.0)
+    elif fv.entropy >= 0.35:
+        components.append(fv.entropy / 0.70)
+    else:
+        components.append(0.15)
+
+    return round(sum(components) / len(components), 3)
+
+
 def detect_preamble(bits: list) -> object:
     """Find longest alternating run of >= 8 bits."""
     if not bits:
@@ -514,7 +548,21 @@ def extract_features(sub: SubFile) -> FeatureVector:
 
     rep_period, rep_count = find_repeating_subpattern(all_inner_bits)
 
-    return FeatureVector(
+    # Manchester decoding (on first segment inner bits)
+    if first_inner:
+        manchester_bits, manchester_convention, manchester_error_rate = decode_manchester(first_inner)
+    else:
+        manchester_bits, manchester_convention, manchester_error_rate = [], "", 0.0
+    manchester_decoded_count = len(manchester_bits)
+
+    # Rolling code detection (PWM-decode each segment independently, then compare)
+    if pwm_params is not None and len(sub.segments) >= 2:
+        decoded_segs = [decode_pwm_bits(strip_padding(seg), pwm_params) for seg in sub.segments]
+        rc_result = detect_rolling_code(decoded_segs)
+    else:
+        rc_result = {"is_rolling": False, "is_fixed": False, "diff_positions": [], "truncated": False}
+
+    fv = FeatureVector(
         frequency=sub.frequency,
         te_us=float(sub.te_us),
         bitrate_bps=1e6 / sub.te_us if sub.te_us > 0 else 0.0,
@@ -537,17 +585,19 @@ def extract_features(sub: SubFile) -> FeatureVector:
         seg_similarity=seg_similarity,
         repeating_subpattern_period=rep_period,
         repeating_subpattern_reps=rep_count,
-        manchester_decoded_bits=[],
-        manchester_decoded_count=0,
-        manchester_error_rate=0.0,
-        manchester_convention="",
-        rolling_code=False,
-        fixed_code=False,
-        diff_positions=[],
+        manchester_decoded_bits=manchester_bits,
+        manchester_decoded_count=manchester_decoded_count,
+        manchester_error_rate=manchester_error_rate,
+        manchester_convention=manchester_convention,
+        rolling_code=rc_result["is_rolling"],
+        fixed_code=rc_result["is_fixed"],
+        diff_positions=rc_result["diff_positions"],
         signal_quality=0.0,
         lat=sub.lat,
         lon=sub.lon,
     )
+    fv.signal_quality = compute_signal_quality(sub, fv)
+    return fv
 
 
 # ---------------------------------------------------------------------------
