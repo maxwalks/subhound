@@ -604,7 +604,63 @@ def extract_features(sub: SubFile) -> FeatureVector:
 # Classification layer
 # ---------------------------------------------------------------------------
 
-ISM_FREQS = {315_000_000, 433_920_000}
+ISM_FREQS = {315_000_000, 433_920_000, 433_420_000, 868_350_000, 915_000_000}
+# 433.42MHz: Somfy RTS (shutters/blinds)
+# 868.35MHz: EU ISM (alarms, LoRa-adjacent OOK)
+# 915MHz: US ISM (some AMR meters, Z-Wave adjacent)
+
+
+def classify_amr_meter(fv: FeatureVector) -> object:
+    """
+    Automatic Meter Reading (AMR/ERT): utility meters transmitting consumption data.
+    US ERT: 315MHz OOK, Manchester encoded, long preamble, ~92 bytes payload.
+    EU M-Bus: 868MHz.
+    """
+    if fv.frequency not in {315_000_000, 868_350_000}:
+        return None
+
+    score = 0
+    reasons = []
+
+    if fv.preamble.found and fv.preamble.length >= 16:
+        score += 3
+        reasons.append(f"[AMR1] {fv.preamble.length}-bit alternating preamble — AMR/ERT sync pattern")
+    if fv.manchester_decoded_count >= 60 and fv.manchester_error_rate < 0.15:
+        score += 3
+        reasons.append(
+            f"[AMR2] Manchester decode: {fv.manchester_decoded_count} bits,"
+            f" {fv.manchester_error_rate:.0%} errors — ERT payload structure"
+        )
+    if fv.total_inner_bits >= 200:
+        score += 2
+        reasons.append(f"[AMR3] {fv.total_inner_bits} inner bits — AMR frames are 600–800 bits")
+    if 40 <= fv.te_us <= 100:
+        score += 1
+        reasons.append(f"[AMR4] TE={fv.te_us:.0f}µs — fast OOK typical of ERT (≈50µs)")
+    if fv.seg_count == 1:
+        score += 1
+        reasons.append("[AMR5] Single burst — ERT meters transmit once per interval")
+
+    if score < 4:
+        return None
+
+    hints = []
+    if fv.frequency == 315_000_000:
+        hints.append("315MHz → US ERT (Encoder Receiver Transmitter) meter profile")
+    else:
+        hints.append("868MHz → EU M-Bus / wireless meter profile")
+    if fv.manchester_decoded_count > 0:
+        hints.append(f"Manchester payload: {fv.manchester_decoded_count} bits decoded")
+
+    confidence = "MEDIUM" if score >= 7 else "LOW"
+
+    return ClassificationResult(
+        label="AMR_METER",
+        confidence=confidence,
+        sub_protocol=hints,
+        reasons=reasons,
+        warnings=["AMR identification requires CRC validation against ERT/IRTIS spec"],
+    )
 
 
 def classify_noise(fv: FeatureVector) -> object:
@@ -783,6 +839,46 @@ def classify_alarm_sensor(fv: FeatureVector) -> object:
         sub_protocol=hints,
         reasons=reasons,
         warnings=["Cannot confirm alarm brand without protocol-specific CRC check"],
+    )
+
+
+def classify_shutter_blind(fv: FeatureVector) -> object:
+    """
+    Motorised blinds/shutters: Somfy RTS (433.42MHz), Nice, Faac.
+    Note: Flipper tuned to 433.92MHz may capture 433.42MHz with reduced fidelity.
+    """
+    # Primary: 433.42MHz (Somfy RTS)
+    # Secondary: 433.92MHz may catch it with ±500kHz tolerance
+    if fv.frequency not in {433_420_000, 433_920_000}:
+        return None
+    if not (550 <= fv.te_us <= 700):
+        return None  # Somfy RTS TE ≈ 604µs
+
+    reasons = [
+        f"[SB1] TE={fv.te_us:.0f}µs — matches Somfy RTS timing (TE≈604µs)",
+    ]
+    hints = []
+    warnings = []
+
+    if 50 <= fv.total_inner_bits <= 80:
+        reasons.append(f"[SB2] {fv.total_inner_bits} inner bits — Somfy RTS 56-bit payload range")
+    if fv.frequency == 433_420_000:
+        hints.append("433.42MHz → Somfy RTS confirmed frequency")
+    else:
+        hints.append("433.92MHz capture — Somfy RTS is 433.42MHz; signal may be degraded")
+        warnings.append("Frequency offset ±500kHz: confirm with Flipper tuned to 433.42MHz")
+
+    if fv.seg_count >= 2:
+        hints.append(f"{fv.seg_count} segments — Somfy typically transmits frame 2× with pause")
+
+    confidence = "MEDIUM" if fv.frequency == 433_420_000 else "LOW"
+
+    return ClassificationResult(
+        label="SHUTTER_BLIND",
+        confidence=confidence,
+        sub_protocol=hints,
+        reasons=reasons,
+        warnings=warnings,
     )
 
 
@@ -1075,10 +1171,12 @@ def classify(fv: FeatureVector) -> ClassificationResult:
     """Run classifiers in priority order; return first match."""
     for fn in [
         classify_noise,
+        classify_amr_meter,      # long preamble + Manchester → distinct early exit
         classify_tpms,
-        classify_alarm_sensor,   # short high-entropy burst, no PWM
-        classify_doorbell,      # before garage (same signal shape, more repeats)
-        classify_outlet_switch, # before garage (same shape, 3-4 repeats, identical)
+        classify_alarm_sensor,
+        classify_shutter_blind,  # TE≈600µs is unique enough to run early
+        classify_doorbell,
+        classify_outlet_switch,
         classify_garage,
         classify_keyfob,
         classify_weather,
