@@ -1405,7 +1405,7 @@ def format_geojson(records: list) -> dict:
                 "sub_protocol": result.sub_protocol,
                 "frequency_hz": fv.frequency,
                 "te_us": fv.te_us,
-                "signal_quality": fv.signal_quality,
+                "signal_quality": round(fv.signal_quality, 4),
                 "rolling_code": fv.rolling_code,
                 "fixed_code": fv.fixed_code,
                 "pwm_decoded_hex": _bits_to_hex(fv.pwm_decoded_bits) if fv.pwm_decoded_bits else None,
@@ -1476,6 +1476,11 @@ def run_batch(
 
     if json_mode:
         print(json.dumps(batch_json, indent=2))
+        if geojson_out is not None:
+            gj = format_geojson(records)
+            with open(geojson_out, "w") as f:
+                json.dump(gj, f, indent=2)
+            print(f"GeoJSON written to {geojson_out} ({len(gj['features'])} geolocated captures)")
         return
 
     # Summary table
