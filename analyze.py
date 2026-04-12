@@ -1423,12 +1423,25 @@ def format_geojson(records: list) -> dict:
 # Runners
 # ---------------------------------------------------------------------------
 
-def run_single(path: pathlib.Path, json_mode: bool = False) -> tuple:
+def run_single(path: pathlib.Path, json_mode: bool = False, db=None) -> tuple:
     """Process a single file. Returns (label, confidence, error_or_None)."""
     try:
         sub = parse_sub_file(str(path))
         fv = extract_features(sub)
         result = classify(fv)
+        if db is not None:
+            db.add_capture(
+                filename=path.name,
+                frequency=fv.frequency,
+                te_us=fv.te_us,
+                classification=result.label,
+                confidence=result.confidence,
+                lat=fv.lat,
+                lon=fv.lon,
+                payload_hex=_bits_to_hex(fv.pwm_decoded_bits),
+                signal_quality=fv.signal_quality,
+                sub_protocol="; ".join(result.sub_protocol),
+            )
         if json_mode:
             print(json.dumps(format_json(str(path), sub, fv, result), indent=2))
         else:
@@ -1446,6 +1459,7 @@ def run_batch(
     json_mode: bool = False,
     summary_only: bool = False,
     geojson_out: pathlib.Path = None,
+    db=None,
 ) -> None:
     sub_files = sorted(directory.glob("*.sub"))
     if not sub_files:
@@ -1463,6 +1477,19 @@ def run_batch(
             result = classify(fv)
             records.append((str(path), sub, fv, result))
 
+            if db is not None:
+                db.add_capture(
+                    filename=path.name,
+                    frequency=fv.frequency,
+                    te_us=fv.te_us,
+                    classification=result.label,
+                    confidence=result.confidence,
+                    lat=fv.lat,
+                    lon=fv.lon,
+                    payload_hex=_bits_to_hex(fv.pwm_decoded_bits),
+                    signal_quality=fv.signal_quality,
+                    sub_protocol="; ".join(result.sub_protocol),
+                )
             if json_mode:
                 batch_json.append(format_json(str(path), sub, fv, result))
             elif not summary_only:
@@ -1522,7 +1549,29 @@ def main() -> None:
         metavar="OUTPUT.geojson",
         help="write GeoJSON FeatureCollection of geolocated captures to this file",
     )
+    parser.add_argument(
+        "--db",
+        metavar="SESSION.db",
+        help="append all classified captures to this SQLite wardrive database",
+    )
+    parser.add_argument(
+        "--db-summary",
+        action="store_true",
+        help="print summary statistics from the db at TARGET and exit",
+    )
     args = parser.parse_args()
+
+    if args.db_summary:
+        from wardrive_db import WardriveDB
+        db = WardriveDB(args.target)
+        db.print_summary()
+        db.close()
+        return
+
+    db = None
+    if args.db:
+        from wardrive_db import WardriveDB
+        db = WardriveDB(args.db)
 
     target = pathlib.Path(args.target)
     if target.is_dir():
@@ -1531,11 +1580,15 @@ def main() -> None:
             json_mode=args.json,
             summary_only=args.summary_only,
             geojson_out=pathlib.Path(args.geojson) if args.geojson else None,
+            db=db,
         )
     elif target.is_file() and target.suffix == ".sub":
-        run_single(target, json_mode=args.json)
+        run_single(target, json_mode=args.json, db=db)
     else:
         parser.error(f"Not a .sub file or directory: {args.target}")
+
+    if db is not None:
+        db.close()
 
 
 if __name__ == "__main__":
