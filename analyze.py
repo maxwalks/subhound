@@ -1535,7 +1535,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Classify Flipper Zero BinRAW .sub captures"
     )
-    parser.add_argument("target", help=".sub file or directory containing .sub files")
+    parser.add_argument("target", nargs="?", help=".sub file or directory containing .sub files")
     parser.add_argument(
         "--json", action="store_true", help="output JSON instead of text report"
     )
@@ -1556,17 +1556,20 @@ def main() -> None:
     )
     parser.add_argument(
         "--db-summary",
-        action="store_true",
-        help="print summary statistics from the db at TARGET and exit",
+        metavar="SESSION.db",
+        help="print summary statistics from an existing wardrive database and exit",
     )
     args = parser.parse_args()
 
     if args.db_summary:
         from wardrive_db import WardriveDB
-        db = WardriveDB(args.target)
+        db = WardriveDB(args.db_summary)
         db.print_summary()
         db.close()
         return
+
+    if args.target is None:
+        parser.error("target is required unless --db-summary is used")
 
     db = None
     if args.db:

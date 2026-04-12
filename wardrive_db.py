@@ -2,7 +2,6 @@
 wardrive_db.py — SQLite session database for wardrive captures.
 """
 
-import json
 import sqlite3
 from datetime import datetime, timezone
 
