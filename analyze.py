@@ -748,6 +748,7 @@ def classify_alarm_sensor(fv: FeatureVector) -> object:
     if 40 <= fv.mean_inner_size <= 120:
         score += 2
         reasons.append(f"[AS2] Inner size {fv.mean_inner_size:.0f} bits — alarm payload range (40–120)")
+    # AS3 always fires here: the entropy gate above guarantees entropy >= 0.90
     if fv.entropy >= 0.90:
         score += 2
         reasons.append(f"[AS3] entropy={fv.entropy:.3f} — high entropy consistent with encrypted payload")
@@ -758,10 +759,10 @@ def classify_alarm_sensor(fv: FeatureVector) -> object:
         score += 1
         reasons.append(f"[AS5] {fv.seg_count} segment(s) — alarm sensors transmit 1–2× per event")
 
-    if score < 5:
+    if score < 7:
         return None
 
-    confidence = "MEDIUM" if score >= 7 else "LOW"
+    confidence = "MEDIUM" if score >= 8 else "LOW"
 
     hints = []
     if 130 <= fv.te_us <= 170:
