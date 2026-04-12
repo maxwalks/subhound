@@ -1007,16 +1007,18 @@ def classify_garage(fv: FeatureVector) -> object:
         )
 
     # Sub-protocol hints
-    dc = fv.pwm_decoded_count
 
-    # Rolling code vs fixed code annotation
+    # Rolling code vs fixed code annotation (before dc chain so it feeds into sub-protocol labels)
     if fv.rolling_code:
-        rolling_note = f"ROLLING CODE (changes at bit positions: {fv.diff_positions[:8]}{'...' if len(fv.diff_positions) > 8 else ''})"
-        reasons.append(f"[G8] {rolling_note}")
+        reasons.append(
+            f"[G8] ROLLING CODE (changes at bit positions: "
+            f"{fv.diff_positions[:8]}{'...' if len(fv.diff_positions) > 8 else ''})"
+        )
     elif fv.fixed_code and fv.seg_count >= 2:
         reasons.append("[G8] FIXED CODE — identical payload in all segments (potentially replayable)")
         warnings.append("Fixed code detected — this transmission may be vulnerable to replay attack")
 
+    dc = fv.pwm_decoded_count
     if dc == 66 and fv.seg_count == 3:
         sub_protocol.append("KeeLoq rolling code (66-bit frame)")
     elif 50 <= dc <= 56 and 280 <= fv.te_us <= 380:
@@ -1025,6 +1027,9 @@ def classify_garage(fv: FeatureVector) -> object:
         sub_protocol.append("PT2262/generic fixed-code remote")
     elif 24 <= dc <= 40 and fv.rolling_code:
         sub_protocol.append("Generic rolling-code remote (short frame)")
+    elif 24 <= dc <= 40:
+        # Single-segment capture: rolling/fixed indeterminate
+        sub_protocol.append("PT2262 family / short remote (code type indeterminate — need 2+ segments)")
     elif dc > 0:
         sub_protocol.append(f"Unrecognised frame ({dc} decoded bits)")
 
