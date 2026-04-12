@@ -783,7 +783,8 @@ def classify_outlet_switch(fv: FeatureVector) -> object:
     return ClassificationResult(
         label="OUTLET_SWITCH",
         confidence="LOW",
-        sub_protocol=["PT2262 wireless outlet/switch", "433.92MHz ISM"],
+        sub_protocol=["PT2262 wireless outlet/switch",
+                      "433.92MHz ISM" if fv.frequency == 433_920_000 else "315MHz ISM"],
         reasons=reasons,
         warnings=["Cannot distinguish outlet from short garage/barrier remote without brand code database"],
     )

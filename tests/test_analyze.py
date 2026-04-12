@@ -1,6 +1,10 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-from analyze import decode_manchester, detect_rolling_code, compute_signal_quality, SubFile, extract_features
+from analyze import (
+    decode_manchester, detect_rolling_code, compute_signal_quality,
+    classify_doorbell, classify_outlet_switch,
+    SubFile, FeatureVector, PWMParams, PreambleInfo, extract_features,
+)
 
 
 def test_manchester_ge_thomas_convention():
@@ -94,7 +98,6 @@ def test_signal_quality_high_for_clean_pwm():
     assert fv_dense.signal_quality > fv_zero.signal_quality
     assert fv_dense.signal_quality >= 0.5
 
-from analyze import classify_doorbell, classify_outlet_switch, FeatureVector, PWMParams, PreambleInfo
 
 def _make_fv(freq=433_920_000, te=174.0, seg_count=3, seg_sim=0.98,
              pwm_consistency=0.95, pwm_decoded=24, zero_ratio=0.72,
