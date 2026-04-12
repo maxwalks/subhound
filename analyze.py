@@ -1383,6 +1383,42 @@ def format_json(path: str, sub: SubFile, fv: FeatureVector, result: Classificati
     }
 
 
+def format_geojson(records: list) -> dict:
+    """
+    Build a GeoJSON FeatureCollection from a list of (path, sub, fv, result) tuples.
+    Only includes records with non-zero GPS coordinates.
+    """
+    features = []
+    for path, sub, fv, result in records:
+        if fv.lat == 0.0 and fv.lon == 0.0:
+            continue
+        feature = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [fv.lon, fv.lat],  # GeoJSON is [lon, lat]
+            },
+            "properties": {
+                "file": os.path.basename(path),
+                "classification": result.label,
+                "confidence": result.confidence,
+                "sub_protocol": result.sub_protocol,
+                "frequency_hz": fv.frequency,
+                "te_us": fv.te_us,
+                "signal_quality": fv.signal_quality,
+                "rolling_code": fv.rolling_code,
+                "fixed_code": fv.fixed_code,
+                "pwm_decoded_hex": _bits_to_hex(fv.pwm_decoded_bits) if fv.pwm_decoded_bits else None,
+            },
+        }
+        features.append(feature)
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Runners
 # ---------------------------------------------------------------------------
@@ -1409,6 +1445,7 @@ def run_batch(
     directory: pathlib.Path,
     json_mode: bool = False,
     summary_only: bool = False,
+    geojson_out: pathlib.Path = None,
 ) -> None:
     sub_files = sorted(directory.glob("*.sub"))
     if not sub_files:
@@ -1417,12 +1454,14 @@ def run_batch(
 
     results = []
     batch_json = []
+    records = []
 
     for path in sub_files:
         try:
             sub = parse_sub_file(str(path))
             fv = extract_features(sub)
             result = classify(fv)
+            records.append((str(path), sub, fv, result))
 
             if json_mode:
                 batch_json.append(format_json(str(path), sub, fv, result))
@@ -1448,6 +1487,13 @@ def run_batch(
         print(f"{fname:<45} {label:<22} {conf}")
     print()
 
+    if geojson_out is not None:
+        gj = format_geojson(records)
+        with open(geojson_out, "w") as f:
+            json.dump(gj, f, indent=2)
+        geo_count = len(gj["features"])
+        print(f"GeoJSON written to {geojson_out} ({geo_count} geolocated captures)")
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -1466,11 +1512,21 @@ def main() -> None:
         action="store_true",
         help="batch mode: print only the summary table, no per-file reports",
     )
+    parser.add_argument(
+        "--geojson",
+        metavar="OUTPUT.geojson",
+        help="write GeoJSON FeatureCollection of geolocated captures to this file",
+    )
     args = parser.parse_args()
 
     target = pathlib.Path(args.target)
     if target.is_dir():
-        run_batch(target, json_mode=args.json, summary_only=args.summary_only)
+        run_batch(
+            target,
+            json_mode=args.json,
+            summary_only=args.summary_only,
+            geojson_out=pathlib.Path(args.geojson) if args.geojson else None,
+        )
     elif target.is_file() and target.suffix == ".sub":
         run_single(target, json_mode=args.json)
     else:
