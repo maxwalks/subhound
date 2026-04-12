@@ -93,3 +93,43 @@ def test_signal_quality_high_for_clean_pwm():
     fv_zero = extract_features(sub_zero)
     assert fv_dense.signal_quality > fv_zero.signal_quality
     assert fv_dense.signal_quality >= 0.5
+
+from analyze import classify_doorbell, classify_outlet_switch, FeatureVector, PWMParams, PreambleInfo
+
+def _make_fv(freq=433_920_000, te=174.0, seg_count=3, seg_sim=0.98,
+             pwm_consistency=0.95, pwm_decoded=24, zero_ratio=0.72,
+             entropy=0.85):
+    pwm = PWMParams(pulse_width=3, short_gap=6, long_gap=11, consistency=pwm_consistency)
+    pre = PreambleInfo(found=False, length=0, position=0)
+    return FeatureVector(
+        frequency=freq, te_us=te, bitrate_bps=1e6/te,
+        seg_count=seg_count, seg_sizes=[448]*seg_count, total_bits=448*seg_count,
+        inner_bits_per_seg=[[1]*100]*seg_count, inner_sizes=[100]*seg_count,
+        total_inner_bits=100*seg_count, mean_inner_size=100.0,
+        zero_ratio=zero_ratio, entropy=entropy,
+        dominant_1run=3, dominant_0run=6, run_variety=0.3,
+        pwm_params=pwm, pwm_decoded_bits=[1,0]*12, pwm_decoded_count=pwm_decoded,
+        preamble=pre, seg_similarity=seg_sim,
+        repeating_subpattern_period=None, repeating_subpattern_reps=0,
+        manchester_decoded_bits=[], manchester_decoded_count=0,
+        manchester_error_rate=0.5, manchester_convention="G.E.Thomas",
+        rolling_code=False, fixed_code=True, diff_positions=[],
+        signal_quality=0.85, lat=0.0, lon=0.0,
+    )
+
+def test_classify_doorbell_fires_for_high_repeat():
+    fv = _make_fv(seg_count=6, pwm_decoded=24)
+    result = classify_doorbell(fv)
+    assert result is not None
+    assert result.label == "DOORBELL"
+
+def test_classify_doorbell_ignores_low_repeat():
+    fv = _make_fv(seg_count=3, pwm_decoded=24)
+    result = classify_doorbell(fv)
+    assert result is None
+
+def test_classify_outlet_fires_for_3_4_repeats():
+    fv = _make_fv(seg_count=4, pwm_decoded=24)
+    result = classify_outlet_switch(fv)
+    assert result is not None
+    assert result.label == "OUTLET_SWITCH"

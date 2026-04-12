@@ -720,6 +720,75 @@ def classify_tpms(fv: FeatureVector) -> object:
     )
 
 
+def classify_doorbell(fv: FeatureVector) -> object:
+    """Wireless doorbell: PT2262-family, 5–8 repeats, 24-bit fixed code."""
+    if fv.frequency not in ISM_FREQS:
+        return None
+    if not (5 <= fv.seg_count <= 10):
+        return None
+    if fv.seg_similarity is None or fv.seg_similarity < 0.92:
+        return None
+    if fv.pwm_params is None or fv.pwm_params.consistency < 0.75:
+        return None
+    if not (16 <= fv.pwm_decoded_count <= 40):
+        return None
+
+    reasons = [
+        f"[D1] {fv.seg_count} repeats — doorbells typically transmit 5–8× while button held",
+        f"[D2] Segment similarity {fv.seg_similarity:.1%} — identical fixed code",
+        f"[D3] {fv.pwm_decoded_count} decoded bits — PT2262 fixed-code family",
+    ]
+    if 100 <= fv.te_us <= 400:
+        reasons.append(f"[D4] TE={fv.te_us:.0f}µs — OOK doorbell range")
+
+    protocol = ["PT2262 fixed-code doorbell"]
+    if fv.frequency == 433_920_000:
+        protocol.append("433.92MHz → European/universal doorbell")
+    else:
+        protocol.append("315MHz → North American doorbell")
+
+    return ClassificationResult(
+        label="DOORBELL",
+        confidence="MEDIUM",
+        sub_protocol=protocol,
+        reasons=reasons,
+        warnings=[],
+    )
+
+
+def classify_outlet_switch(fv: FeatureVector) -> object:
+    """Wireless power outlet / smart plug: PT2262-family, 3–4 repeats, 24-bit fixed code."""
+    if fv.frequency not in ISM_FREQS:
+        return None
+    if not (3 <= fv.seg_count <= 4):
+        return None
+    if fv.seg_similarity is None or fv.seg_similarity < 0.97:
+        return None  # outlet codes are perfectly identical
+    if fv.pwm_params is None or fv.pwm_params.consistency < 0.80:
+        return None
+    # Outlet payloads are short fixed codes
+    if not (24 <= fv.pwm_decoded_count <= 32):
+        return None
+    # Must be fixed code (not rolling)
+    if fv.rolling_code:
+        return None
+
+    reasons = [
+        f"[O1] {fv.seg_count} repeats — wireless outlets typically transmit 3–4×",
+        f"[O2] Segment similarity {fv.seg_similarity:.1%} — perfectly identical (fixed code)",
+        f"[O3] {fv.pwm_decoded_count} decoded bits — PT2262 24-bit fixed code",
+        "[O4] No rolling code detected — consistent with static outlet address",
+    ]
+
+    return ClassificationResult(
+        label="OUTLET_SWITCH",
+        confidence="LOW",
+        sub_protocol=["PT2262 wireless outlet/switch", "433.92MHz ISM"],
+        reasons=reasons,
+        warnings=["Cannot distinguish outlet from short garage/barrier remote without brand code database"],
+    )
+
+
 def classify_garage(fv: FeatureVector) -> object:
     if fv.frequency not in ISM_FREQS:
         return None
@@ -940,6 +1009,8 @@ def classify(fv: FeatureVector) -> ClassificationResult:
     for fn in [
         classify_noise,
         classify_tpms,
+        classify_doorbell,      # before garage (same signal shape, more repeats)
+        classify_outlet_switch, # before garage (same shape, 3-4 repeats, identical)
         classify_garage,
         classify_keyfob,
         classify_weather,
