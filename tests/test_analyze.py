@@ -2,7 +2,7 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from analyze import (
     decode_manchester, detect_rolling_code, compute_signal_quality,
-    classify_doorbell, classify_outlet_switch,
+    classify_alarm_sensor, classify_doorbell, classify_outlet_switch,
     SubFile, FeatureVector, PWMParams, PreambleInfo, extract_features,
 )
 
@@ -136,3 +136,24 @@ def test_classify_outlet_fires_for_3_4_repeats():
     result = classify_outlet_switch(fv)
     assert result is not None
     assert result.label == "OUTLET_SWITCH"
+
+def test_alarm_sensor_single_segment():
+    fv = _make_fv(freq=433_920_000, te=150.0, seg_count=1, seg_sim=None,
+                  pwm_consistency=0.0, pwm_decoded=0, zero_ratio=0.55, entropy=0.95)
+    # Override pwm_params to None
+    fv.pwm_params = None
+    fv.pwm_decoded_count = 0
+    fv.seg_similarity = None
+    fv.mean_inner_size = 64.0
+    result = classify_alarm_sensor(fv)
+    assert result is not None
+    assert result.label == "ALARM_SENSOR"
+
+def test_alarm_sensor_rejects_low_entropy():
+    fv = _make_fv(freq=433_920_000, te=150.0, seg_count=1,
+                  pwm_decoded=0, zero_ratio=0.55, entropy=0.30)
+    fv.pwm_params = None
+    fv.seg_similarity = None
+    fv.mean_inner_size = 64.0
+    result = classify_alarm_sensor(fv)
+    assert result is None

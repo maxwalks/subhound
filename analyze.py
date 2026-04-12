@@ -720,6 +720,71 @@ def classify_tpms(fv: FeatureVector) -> object:
     )
 
 
+def classify_alarm_sensor(fv: FeatureVector) -> object:
+    """
+    Home/car alarm sensor: Honeywell 5800, DSC, Visonic.
+    433.92MHz, short single or dual bursts, high entropy, no clean PWM.
+    """
+    if fv.frequency not in {433_920_000, 868_350_000}:
+        return None
+    # No clean PWM — alarm sensors use Manchester or proprietary encoding
+    if fv.pwm_params is not None and fv.pwm_params.consistency > 0.80:
+        return None
+    # Must be short single or dual burst (not a repeated remote)
+    if fv.seg_count > 3:
+        return None
+    if fv.seg_similarity is not None and fv.seg_similarity > 0.92:
+        return None  # too identical → this is a remote
+    # High entropy is a hard requirement (encrypted payload)
+    if fv.entropy < 0.90:
+        return None
+
+    score = 0
+    reasons = []
+
+    if 100 <= fv.te_us <= 400:
+        score += 2
+        reasons.append(f"[AS1] TE={fv.te_us:.0f}µs — alarm sensor OOK range (100–400µs)")
+    if 40 <= fv.mean_inner_size <= 120:
+        score += 2
+        reasons.append(f"[AS2] Inner size {fv.mean_inner_size:.0f} bits — alarm payload range (40–120)")
+    if fv.entropy >= 0.90:
+        score += 2
+        reasons.append(f"[AS3] entropy={fv.entropy:.3f} — high entropy consistent with encrypted payload")
+    if 0.40 <= fv.zero_ratio <= 0.75:
+        score += 1
+        reasons.append(f"[AS4] zero_ratio={fv.zero_ratio:.1%} — dense signal data")
+    if fv.seg_count <= 2:
+        score += 1
+        reasons.append(f"[AS5] {fv.seg_count} segment(s) — alarm sensors transmit 1–2× per event")
+
+    if score < 5:
+        return None
+
+    confidence = "MEDIUM" if score >= 7 else "LOW"
+
+    hints = []
+    if 130 <= fv.te_us <= 170:
+        hints.append("TE ~150µs → possible Honeywell 5800-series profile")
+    elif 90 <= fv.te_us <= 130:
+        hints.append("TE ~110µs → possible DSC/Visonic profile")
+    if fv.manchester_error_rate < 0.20 and fv.manchester_decoded_count > 20:
+        hints.append(f"Manchester decode successful ({fv.manchester_decoded_count} bits, "
+                     f"{fv.manchester_error_rate:.0%} errors)")
+    if fv.frequency == 868_350_000:
+        hints.append("868MHz → European alarm sensor band")
+    else:
+        hints.append("433.92MHz → alarm sensor ISM band")
+
+    return ClassificationResult(
+        label="ALARM_SENSOR",
+        confidence=confidence,
+        sub_protocol=hints,
+        reasons=reasons,
+        warnings=["Cannot confirm alarm brand without protocol-specific CRC check"],
+    )
+
+
 def classify_doorbell(fv: FeatureVector) -> object:
     """Wireless doorbell: PT2262-family, 5–8 repeats, 24-bit fixed code."""
     if fv.frequency not in ISM_FREQS:
@@ -1010,6 +1075,7 @@ def classify(fv: FeatureVector) -> ClassificationResult:
     for fn in [
         classify_noise,
         classify_tpms,
+        classify_alarm_sensor,   # short high-entropy burst, no PWM
         classify_doorbell,      # before garage (same signal shape, more repeats)
         classify_outlet_switch, # before garage (same shape, 3-4 repeats, identical)
         classify_garage,
