@@ -1300,6 +1300,27 @@ def format_report(path: str, sub: SubFile, fv: FeatureVector, result: Classifica
     else:
         lines.append("  Preamble     : not detected")
 
+    lines.append(f"  Signal qual  : {fv.signal_quality:.0%}")
+
+    if fv.manchester_decoded_count > 0 and fv.manchester_error_rate < 0.30:
+        lines.append(
+            f"  Manchester   : {fv.manchester_decoded_count} bits decoded"
+            f" [{fv.manchester_convention},"
+            f" {fv.manchester_error_rate:.0%} errors]"
+        )
+        if fv.manchester_decoded_bits:
+            mhex = _bits_to_hex(fv.manchester_decoded_bits)
+            lines.append(f"  Manch. hex   : {mhex}")
+
+    if fv.seg_count >= 2:
+        if fv.rolling_code:
+            lines.append(f"  Code type    : ROLLING (changes at {len(fv.diff_positions)} bit positions)")
+        elif fv.fixed_code:
+            lines.append(f"  Code type    : FIXED (identical across all {fv.seg_count} segments)")
+
+    if fv.lat != 0.0 or fv.lon != 0.0:
+        lines.append(f"  Location     : {fv.lat:.6f}, {fv.lon:.6f}")
+
     lines.append("")
     lines.append("REASONING CHAIN")
     for reason in result.reasons:
@@ -1342,6 +1363,15 @@ def format_json(path: str, sub: SubFile, fv: FeatureVector, result: Classificati
             "pwm_decoded_hex": (
                 _bits_to_hex(fv.pwm_decoded_bits) if fv.pwm_decoded_bits else None
             ),
+            "signal_quality": fv.signal_quality,
+            "rolling_code": fv.rolling_code,
+            "fixed_code": fv.fixed_code,
+            "diff_positions": fv.diff_positions,
+            "manchester_decoded_count": fv.manchester_decoded_count,
+            "manchester_decoded_hex": _bits_to_hex(fv.manchester_decoded_bits) if fv.manchester_decoded_bits else None,
+            "manchester_error_rate": round(fv.manchester_error_rate, 4),
+            "lat": fv.lat,
+            "lon": fv.lon,
         },
         "reasoning": result.reasons,
         "warnings": result.warnings,
