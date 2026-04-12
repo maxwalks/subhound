@@ -1363,13 +1363,18 @@ def format_json(path: str, sub: SubFile, fv: FeatureVector, result: Classificati
             "pwm_decoded_hex": (
                 _bits_to_hex(fv.pwm_decoded_bits) if fv.pwm_decoded_bits else None
             ),
-            "signal_quality": fv.signal_quality,
+            "signal_quality": round(fv.signal_quality, 4),
             "rolling_code": fv.rolling_code,
             "fixed_code": fv.fixed_code,
-            "diff_positions": fv.diff_positions,
+            "diff_positions": fv.diff_positions[:8],  # cap to match text report
             "manchester_decoded_count": fv.manchester_decoded_count,
-            "manchester_decoded_hex": _bits_to_hex(fv.manchester_decoded_bits) if fv.manchester_decoded_bits else None,
+            "manchester_decoded_hex": (
+                _bits_to_hex(fv.manchester_decoded_bits)
+                if fv.manchester_decoded_bits and fv.manchester_error_rate < 0.30
+                else None
+            ),
             "manchester_error_rate": round(fv.manchester_error_rate, 4),
+            "manchester_convention": fv.manchester_convention if fv.manchester_decoded_count > 0 else None,
             "lat": fv.lat,
             "lon": fv.lon,
         },
